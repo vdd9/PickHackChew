@@ -68,6 +68,8 @@ def service_set_status(name, up):
     """Start or stop specified service."""
     if not has_AU_rights_for(name):
         setRights(True)
+    if up and get_service_starttype(name) == "Disabled":
+        set_service_starttype(name,'demand')
     process = subprocess.run(["net", ("stop","start")[up], name], stdout=subprocess.PIPE, text=True)
 
 def reflesh_status():
@@ -96,12 +98,19 @@ def create_image(width, height, color1, color2, list_of_band):
 
 def setRights(give):
     AURights = ("",MAGIC_SDDL)[give]
-    webclient_start_behavior = ("disabled","demand")[give]
+    webclient_starttype = ("disabled","demand")[give]
     shell.ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters='/c '+'sc.exe sdset stAgentSvc "D:(A;;CCLCSWRPLORCWD;;;BA)'+AURights+
                          '(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)" && sc.exe sdset pangps "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)'+AURights+
                          '(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)" && sc.exe sdset webclient "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)'+AURights+
-                         '(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)" && sc.exe config webclient start= '+webclient_start_behavior)
+                         '(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)" && sc.exe config webclient start= '+webclient_starttype)
     time.sleep(1)
+
+def get_service_starttype(service):
+    process = subprocess.run(["powershell", f"Get-Service -Name {service} | select -ExpandProperty starttype"], stdout=subprocess.PIPE, text=True)
+    return process.stdout.strip()
+
+def set_service_starttype(service, starttype):
+    shell.ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=f'/c sc.exe config {service} start= '+starttype)
 
 def be_free(icon,item):
     service_set_status('pangps',False)
@@ -168,7 +177,7 @@ mymenu = pystray.Menu(
             lambda icon, item: abort_shutdown()),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(
-            'Erase the evidences \\& Exit',
+            'Erase the evidences && Exit',
             victor_the_cleaner),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(
