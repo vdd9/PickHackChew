@@ -3,7 +3,7 @@
 import sys
 import os
 from time import sleep
-from subprocess import run, PIPE
+from subprocess import run, PIPE, STARTUPINFO, STARTF_USESHOWWINDOW
 from psutil import win_service_get
 from win32com.client import Dispatch
 from PIL import Image, ImageDraw
@@ -23,6 +23,10 @@ from pystray import Icon, Menu, MenuItem
 LNK_PATH = os.path.join(os.getenv('APPDATA'),r"Microsoft\Windows\Start Menu\Programs\Startup\PickHackChew.lnk")
 # SDDL (Service Descriptor Definition Language) that give all rights to AU (Authenticated Users)
 MAGIC_SDDL = '(A;;CCLCSWRPWPDTLOCRRC;;;AU)'
+# startupinfo for subprocess.run()
+STARTUP_INFO = STARTUPINFO()
+STARTUP_INFO.dwFlags = STARTF_USESHOWWINDOW
+STARTUP_INFO.wShowWindow = 0
 
 def get_exec_path():
     """Return path to currently running executable, None if run as python script."""
@@ -65,7 +69,7 @@ def is_service_running(name):
 
 def has_AU_rights_for(name):
     """Check if right has been granted to AU (AuthenticatedUsers) to start and stop the specified service."""
-    process = run(["sc", 'sdshow', name], stdout=PIPE, text=True)
+    process = run(["sc", 'sdshow', name], stdout=PIPE, text=True, startupinfo=STARTUP_INFO)
     if MAGIC_SDDL in process.stdout.rstrip():
         return True
     return False
@@ -76,7 +80,7 @@ def service_set_status(name, up):
         set_rights(True)
     if up and get_service_starttype(name) == "Disabled":
         set_service_starttype(name,'demand')
-    run(["net", ("stop","start")[up], name], stdout=PIPE, text=True)
+    run(["net", ("stop","start")[up], name], startupinfo=STARTUP_INFO)
 
 def reflesh_status():
     """Refresh all status in case something had been changed by somthing else than this software."""
@@ -105,18 +109,18 @@ def create_image(width, height, color1, color2, list_of_band):
 def set_rights(give):
     AU_rights = ("",MAGIC_SDDL)[give]
     webclient_starttype = ("disabled","demand")[give]
-    ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters='/c '+'sc.exe sdset stAgentSvc "D:(A;;CCLCSWRPLORCWD;;;BA)'+AU_rights+
+    _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters='/c '+'sc.exe sdset stAgentSvc "D:(A;;CCLCSWRPLORCWD;;;BA)'+AU_rights+
                          '(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)" && sc.exe sdset pangps "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)'+AU_rights+
                          '(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)" && sc.exe sdset webclient "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)'+AU_rights+
                          '(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)" && sc.exe config webclient start= '+webclient_starttype)
     sleep(1)
 
 def get_service_starttype(service):
-    process = run(["powershell", f"Get-Service -Name {service} | select -ExpandProperty starttype"], stdout=PIPE, text=True)
+    process = run(["powershell", "-WindowStyle", "hidden", f"Get-Service -Name {service} | select -ExpandProperty starttype"], stdout=PIPE, text=True, startupinfo=STARTUP_INFO)
     return process.stdout.strip()
 
 def set_service_starttype(service, starttype):
-    ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=f'/c sc.exe config {service} start= '+starttype)
+    _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=f'/c sc.exe config {service} start= '+starttype)
 
 def be_free(icon,item):
     service_set_status('pangps',False)
@@ -142,7 +146,7 @@ def victor_the_cleaner(icon,item):
     terminate(icon,item)
 
 def abort_shutdown():
-    run(['shutdown','-a'], stdout = PIPE)
+    run(['shutdown','-a'], startupinfo=STARTUP_INFO)
 
 def terminate(icon, item):
     icon.stop()
