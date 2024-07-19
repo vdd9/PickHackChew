@@ -27,6 +27,15 @@ MAGIC_SDDL = '(A;;CCLCSWRPWPDTLOCRRC;;;AU)'
 STARTUP_INFO = STARTUPINFO()
 STARTUP_INFO.dwFlags = STARTF_USESHOWWINDOW
 STARTUP_INFO.wShowWindow = 0
+# proposed DNS
+DNS_LIST={"CloudFlare":("1.1.1.1","1.0.0.1"),
+"Google": ("8.8.8.8", "8.8.4.4"),
+"Control D": ("76.76.2.0", "76.76.10.0"),
+"Quad9": ("9.9.9.9", "149.112.112.112"),
+"OpenDNS Home": ("208.67.222.222", "208.67.220.220"),
+"AdGuard DNS": ("94.140.14.14", "94.140.15.15"),
+"CleanBrowsing": ("185.228.168.9", "185.228.169.9"),
+"Alternate DNS": ("76.76.19.19", "76.223.122.150")}
 
 def get_exec_path():
     """Return path to currently running executable, None if run as python script."""
@@ -93,8 +102,8 @@ def reflesh_status():
 def on_service_clicked(icon, item, service):
     """Toggle service status"""
     service_set_status(service,not item.checked)
-    icon.notify(f'service {service} is now {('stopped','started')[states[service]]}')
     reflesh_status()
+    icon.notify(f'service {service} is now {('stopped','started')[states[service]]}')
 
 def create_image(width, height, color1, color2, list_of_band):
     image = Image.new('RGB', (width, height), color1)
@@ -106,9 +115,9 @@ def create_image(width, height, color1, color2, list_of_band):
                 fill=color2)
     return image
 
-def set_rights(give):
-    AU_rights = ("",MAGIC_SDDL)[give]
-    webclient_starttype = ("disabled","demand")[give]
+def set_rights(enable):
+    AU_rights = ("",MAGIC_SDDL)[enable]
+    webclient_starttype = ("disabled","demand")[enable]
     _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters='/c '+'sc.exe sdset stAgentSvc "D:(A;;CCLCSWRPLORCWD;;;BA)'+AU_rights+
                          '(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)" && sc.exe sdset pangps "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)'+AU_rights+
                          '(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)" && sc.exe sdset webclient "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)'+AU_rights+
@@ -122,24 +131,43 @@ def get_service_starttype(service):
 def set_service_starttype(service, starttype):
     _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=f'/c sc.exe config {service} start= '+starttype)
 
+def get_firewall_status():
+    process = run(["powershell", "-WindowStyle", "hidden", "Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\DomainProfile' -name 'EnableFirewall'  | select -ExpandProperty EnableFirewall"], stdout=PIPE, text=True, startupinfo=STARTUP_INFO)
+    return process.stdout.strip() == "1"
+
+def set_firewall_status(enable):
+    flag = ('0','1')[enable]
+    cmd = "/c powershell \""+\
+    f"Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\DomainProfile' -name 'EnableFirewall' -Value {flag}; "+\
+    f"Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\PublicProfile' -name 'EnableFirewall' -Value {flag}; "+\
+    f"Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\StandardProfile' -name 'EnableFirewall' -Value {flag}; "+\
+    f"Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\services\\SharedAccess\\Parameters\\FirewallPolicy\\DomainProfile' -name 'EnableFirewall' -Value {flag}; "+\
+    f"Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\services\\SharedAccess\\Parameters\\FirewallPolicy\\PublicProfile' -name 'EnableFirewall' -Value {flag}; "+\
+    f"Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile' -name 'EnableFirewall' -Value {flag}\""
+    _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=cmd)
+
 def be_free(icon,item):
     service_set_status('pangps',False)
     service_set_status('stAgentSvc',False)
     service_set_status('webclient',True)
-    icon.notify('You\'re free.')
     reflesh_status()
+    icon.notify('You\'re free.')
 
 def be_corporate(icon,item):
     service_set_status('webclient',False)
     service_set_status('stAgentSvc',True)
     service_set_status('pangps',True)
-    icon.notify('Network complient.')
+    flush_dns(get_first_interface_conencted())
+    set_firewall_status(True)
     reflesh_status()
+    icon.notify('Network complient.')
 
 def victor_the_cleaner(icon,item):
     service_set_status('webclient',False)
     service_set_status('stAgentSvc',True)
     service_set_status('pangps',True)
+    flush_dns(get_first_interface_conencted())
+    set_firewall_status(True)
     set_rights(False)
     run_at_startup(False)
     icon.notify('Ass clean.')
@@ -151,6 +179,38 @@ def abort_shutdown():
 def terminate(icon, item):
     icon.stop()
     sys.exit(0)
+
+def get_first_interface_conencted():
+    process = run(["netsh", "interface", "ip", "show", "interfaces"], stdout=PIPE, text=True, startupinfo=STARTUP_INFO)
+    return next(filter(lambda y: "connected" in y and not "Loopback" in y, process.stdout.rstrip().splitlines()), "connected").split("connected")[1].strip()
+
+def is_dns(interface, dns_name):
+    dns_ip = DNS_LIST.get(dns_name)[0]
+    next_line_is_the_one = False
+    process = run(["netsh", "interface", "ip", "show", "dnsservers"], stdout=PIPE, text=True, startupinfo=STARTUP_INFO)
+    for line in process.stdout.rstrip().splitlines():
+        if interface in line:
+            next_line_is_the_one = True
+            continue
+        if next_line_is_the_one:
+            if dns_ip in line:
+                return True
+            else:
+                return False
+    return False
+
+def set_dns(icon, dns_name):
+    dns_ips = DNS_LIST.get(dns_name)
+    interface = get_first_interface_conencted()
+    if is_dns(interface,dns_name):
+        flush_dns(interface)
+        icon.notify('DNS will now be provided by the Router.')
+    else:
+        cmd = 'netsh interface ip set dns name="'+interface+'" static '+dns_ips[0]+' & netsh interface ip add dns name="'+interface+'" '+dns_ips[1]+' index=2'
+        _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters='/c '+cmd)
+
+def flush_dns(interface):
+    _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters='/c '+'netsh interface ip set dns name="'+interface+'" dhcp')
 
 ####
 
@@ -178,9 +238,26 @@ my_menu = Menu(
             checked=lambda item: states['webclient']),
         Menu.SEPARATOR,
         MenuItem(
+            'Firewall',
+            lambda icon, item: set_firewall_status(not item.checked),
+            checked=lambda item: get_firewall_status()),
+        Menu.SEPARATOR,
+        MenuItem(
             'Run at startup',
             lambda icon, item: run_at_startup(not item.checked),
             checked=lambda item: states['startup']),
+        Menu.SEPARATOR,
+        MenuItem(
+            'Dns',
+            Menu(
+                *(MenuItem(
+                    dns_name,
+                    lambda icon, item: set_dns(icon, item.text),
+                    checked=lambda item: is_dns(get_first_interface_conencted(),item.text),
+                    radio=True)
+                for dns_name in DNS_LIST.keys())
+                )
+            ),
         Menu.SEPARATOR,
         MenuItem(
             'Abort planned Shutdown',
