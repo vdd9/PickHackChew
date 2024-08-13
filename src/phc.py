@@ -37,6 +37,18 @@ DNS_LIST={"CloudFlare":("1.1.1.1","1.0.0.1"),
 "CleanBrowsing": ("185.228.168.9", "185.228.169.9"),
 "Alternate DNS": ("76.76.19.19", "76.223.122.150")}
 
+# ICMP keys
+ICMP=["AllowOutboundDestinationUnreachable",
+"AllowOutboundSourceQuench",
+"AllowRedirect",
+"AllowInboundEchoRequest",
+"AllowInboundRouterRequest",
+"AllowOutboundTimeExceeded",
+"AllowOutboundParameterProblem",
+"AllowInboundTimestampRequest",
+"AllowInboundMaskRequest",
+"AllowOutboundPacketTooBig"]
+
 def get_exec_path():
     """Return path to currently running executable, None if run as python script."""
     if getattr(sys, 'frozen', False):
@@ -144,6 +156,29 @@ def set_firewall_status(enable):
     f"Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\services\\SharedAccess\\Parameters\\FirewallPolicy\\DomainProfile' -name 'EnableFirewall' -Value {flag}; "+\
     f"Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\services\\SharedAccess\\Parameters\\FirewallPolicy\\PublicProfile' -name 'EnableFirewall' -Value {flag}; "+\
     f"Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile' -name 'EnableFirewall' -Value {flag}\""
+    _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=cmd)
+
+def get_ping_allowed():
+    process = run(["powershell", "-WindowStyle", "hidden", "Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\StandardProfile\\IcmpSettings' -name AllowInboundEchoRequest  | select -ExpandProperty AllowInboundEchoRequest"], stdout=PIPE, text=True, startupinfo=STARTUP_INFO)
+    return process.stdout.strip() == "1"
+
+# def set_ping_allowed(enable):
+#     flag = ('0','1')[enable]
+#     cmd = f"/c powershell \"Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\StandardProfile\\IcmpSettings' -name 'AllowInboundEchoRequest' -Value{flag}\""
+#     _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=cmd)
+
+def set_ping_allowed(enable):
+    flag = ('0','1')[enable]
+    cmd = "/c " + " && ".join(f"reg add HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\StandardProfile\\IcmpSettings /v {entryname} /t REG_DWORD /d {flag} /f" for entryname in ICMP)
+    _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=cmd)
+
+def get_hibarnate():
+    process = run(["powershell", "-WindowStyle", "hidden", "Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Power' -name HibernateEnabled  | select -ExpandProperty HibernateEnabled"], stdout=PIPE, text=True, startupinfo=STARTUP_INFO)
+    return process.stdout.strip() == "1"
+
+def set_hibarnate(enable):
+    flag = ('0','1')[enable]
+    cmd = f"/c reg add HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Power /v HibernateEnabled /t REG_DWORD /d {flag} /f"
     _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=cmd)
 
 def be_free(icon,item):
@@ -257,6 +292,19 @@ my_menu = Menu(
                     radio=True)
                 for dns_name in DNS_LIST.keys())
                 )
+            ),
+        Menu.SEPARATOR,
+        MenuItem(
+            'Miscellaneous',
+            Menu(
+                MenuItem(
+                    'Hibarnate Feature',
+                    lambda icon, item: set_hibarnate(not item.checked) and icon.notify('Restart Needed.'),
+                    checked=lambda item: get_hibarnate()),
+                MenuItem(
+                    'ICMP Features',
+                    lambda icon, item: set_ping_allowed(not item.checked),
+                    checked=lambda item: get_ping_allowed()))
             ),
         Menu.SEPARATOR,
         MenuItem(
