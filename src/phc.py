@@ -178,7 +178,7 @@ def get_hibarnate():
 
 def set_hibarnate(enable):
     flag = ('0','1')[enable]
-    cmd = f"/c reg add HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Power /v HibernateEnabled /t REG_DWORD /d {flag} /f"
+    cmd = f"/c reg add HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Power /v HibernateEnabled /t REG_DWORD /d {flag} /f && reg add HKEY_LOCAL_MACHINE\\Software\\Policies\\Microsoft\\Windows\\Explorer /v ShowHibernateOption /t REG_DWORD /d {flag} /f"
     _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=cmd)
 
 def be_free(icon,item):
