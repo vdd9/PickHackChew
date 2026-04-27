@@ -181,6 +181,13 @@ def set_hibarnate(enable):
     cmd = f"/c reg add HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Power /v HibernateEnabled /t REG_DWORD /d {flag} /f && reg add HKEY_LOCAL_MACHINE\\Software\\Policies\\Microsoft\\Windows\\Explorer /v ShowHibernateOption /t REG_DWORD /d {flag} /f"
     _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=cmd)
 
+def set_oldcontextmenu(enable):
+    if enable:
+        cmd = "/c reg.exe add 'HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32' /f /ve"
+    else:
+        cmd = "/c reg.exe delete 'HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}' /f"
+    _ = ShellExecuteEx(lpVerb='runas', lpFile='cmd.exe', lpParameters=cmd)
+
 def be_free(icon,item):
     service_set_status('pangps',False)
     service_set_status('stAgentSvc',False)
